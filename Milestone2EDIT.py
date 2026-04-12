@@ -143,7 +143,7 @@ def simulate_virtual_memory(params, phys):
 # OUTPUT - MILESTONE 1
 def print_results(params, cache, phys):
     print("MILESTONE #1:  Input Parameters and Calculated Values")
-    print("Cache Simulator - CS 3853 – Team #08\n")
+    print("Cache Simulator - CS 3853 – Team #14\n")
 
     print("Trace File(s):")
     for f in params.f:
