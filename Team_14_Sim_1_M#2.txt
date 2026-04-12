@@ -1,5 +1,5 @@
 MILESTONE #1:  Input Parameters and Calculated Values
-Cache Simulator - CS 3853 – Team #08
+Cache Simulator - CS 3853 â€“ Team #14
 
 Trace File(s):
         traces4Analysis/A-9_new_1.5.pdf.trc
