@@ -1,0 +1,29 @@
+
+Cache Simulator - CS 3853 – Team #14
+
+
+MILESTONE #3: - Cache Simulation Results
+
+***** CACHE SIMULATION RESULTS *****
+
+Total Cache Accesses:   78443
+--- Instruction Bytes:  224296
+--- SrcDst Bytes:       89476
+
+Cache Hits:             74881
+Cache Misses:           3562
+--- Compulsory Misses:  2742
+--- Conflict Misses:    820
+
+***** CACHE HIT & MISS RATE *****
+
+Hit Rate:               95.4591%
+Miss Rate:              4.5409%
+
+CPI:                    10.26 Cycles/Instruction (575328)
+
+***** ADDITIONAL CACHE METRICS *****
+
+Total Cache Blocks:     1024
+Unused Cache Blocks:    15
+Unused Cache Space:     0.94 KB
