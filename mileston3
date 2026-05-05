@@ -1,0 +1,246 @@
+import argparse
+import math
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("-s", type=int, required=True)
+    parser.add_argument("-b", type=int, required=True)
+    parser.add_argument("-a", type=int, required=True)
+    parser.add_argument("-r", type=str, required=True)
+    parser.add_argument("-p", type=int, required=True)
+    parser.add_argument("-u", type=float, required=True)
+    parser.add_argument("-n", type=int, required=True)
+    parser.add_argument("-f", action="append", required=True)
+
+    return parser.parse_args()
+
+
+# ---------------- PHYSICAL MEMORY ----------------
+def calculate_physical_memory(params):
+    page_size = 4096
+    phys_bytes = params.p * 1024 * 1024
+
+    phys_pages = phys_bytes // page_size
+    system_pages = int(phys_pages * (params.u / 100))
+
+    entry_bits = 1 + int(math.log2(phys_pages))
+    total_entries = 512 * 1024
+
+    ram_bytes = (total_entries * entry_bits // 8) * len(params.f)
+
+    return {
+        "physical_pages": phys_pages,
+        "system_pages": system_pages,
+        "entry_bits": entry_bits,
+        "ram_bytes": ram_bytes
+    }
+
+
+# ---------------- VIRTUAL MEMORY ----------------
+def simulate_virtual_memory(params, phys):
+    page_size = 4096
+
+    free_pages = list(range(phys["system_pages"], phys["physical_pages"]))
+    page_tables = [dict() for _ in params.f]
+
+    stats = {
+        "mapped": 0,
+        "hits": 0,
+        "free": 0,
+        "faults": 0
+    }
+
+    for pid, file in enumerate(params.f):
+        with open(file, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if not parts:
+                    continue
+
+                addr = parts[-1]
+
+                if not (addr.startswith("0x") or addr.isdigit()):
+                    continue
+
+                try:
+                    address = int(addr, 16) if addr.startswith("0x") else int(addr)
+                except:
+                    continue
+
+                vp = address // page_size
+                stats["mapped"] += 1
+
+                if vp in page_tables[pid]:
+                    stats["hits"] += 1
+                    continue
+
+                stats["faults"] += 1
+
+                if free_pages:
+                    page_tables[pid][vp] = free_pages.pop(0)
+                    stats["free"] += 1
+                else:
+                    evict = next(iter(page_tables[pid]))
+                    page_tables[pid].pop(evict)
+                    page_tables[pid][vp] = 0
+
+    return stats, page_tables
+
+
+# ---------------- CACHE SIMULATION ----------------
+def simulate_cache(params, vm_stats):
+    cache_size = params.s * 1024
+    block_size = params.b
+    assoc = params.a
+
+    total_blocks = cache_size // block_size
+    num_sets = total_blocks // assoc
+
+    cache_sets = [[] for _ in range(num_sets)]
+
+    hits = 0
+    misses = 0
+    compulsory = 0
+    conflict = 0
+    accesses = 0
+    cycles = 0
+
+    seen_blocks = set()
+
+    instruction_count = 0
+    instruction_bytes = 0
+    srcdst_bytes = 0
+
+    block_reads = math.ceil(block_size / 4)
+    miss_penalty = 4 * block_reads
+
+    for file in params.f:
+        with open(file, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if not parts:
+                    continue
+
+                addr = parts[-1]
+
+                if not (addr.startswith("0x") or addr.isdigit()):
+                    continue
+
+                try:
+                    address = int(addr, 16) if addr.startswith("0x") else int(addr)
+                except:
+                    continue
+
+                is_instruction = line.startswith("EIP")
+                is_data = ("srcM:" in line) or ("dstM:" in line)
+
+                if is_instruction:
+                    instruction_count += 1
+                    instruction_bytes += 4
+                    cycles += 2
+
+                if is_data:
+                    srcdst_bytes += 4
+                    cycles += 1
+
+                block = address // block_size
+                set_idx = block % num_sets
+                tag = block // num_sets
+
+                accesses += 1
+                cycles += 1
+
+                if tag in cache_sets[set_idx]:
+                    hits += 1
+                else:
+                    misses += 1
+
+                    if block not in seen_blocks:
+                        compulsory += 1
+                        seen_blocks.add(block)
+                    else:
+                        conflict += 1
+
+                    cycles += miss_penalty
+
+                    if len(cache_sets[set_idx]) < assoc:
+                        cache_sets[set_idx].append(tag)
+                    else:
+                        cache_sets[set_idx].pop(0)
+                        cache_sets[set_idx].append(tag)
+
+    cycles += vm_stats["faults"] * 100
+
+    cpi = cycles / instruction_count if instruction_count else 0
+
+    # ---------------- FIXED CACHE UTILIZATION ----------------
+    used_blocks = sum(len(s) for s in cache_sets)
+
+    unused_blocks = total_blocks - used_blocks
+    unused_blocks = max(0, unused_blocks)   # prevents negatives
+
+    unused_kb = (unused_blocks * block_size) / 1024
+
+    return {
+        "accesses": accesses,
+        "hits": hits,
+        "misses": misses,
+        "compulsory": compulsory,
+        "conflict": conflict,
+        "cycles": cycles,
+        "cpi": cpi,
+        "hit_rate": (hits / accesses * 100) if accesses else 0,
+        "miss_rate": (misses / accesses * 100) if misses else 0,
+        "instruction_bytes": instruction_bytes,
+        "srcdst_bytes": srcdst_bytes,
+        "total_blocks": total_blocks,
+        "unused_blocks": unused_blocks,
+        "unused_kb": unused_kb
+    }
+
+
+# ---------------- OUTPUT ----------------
+def print_cache_results(stats):
+    print("\nCache Simulator - CS 3853 – Team #14\n")
+    print("\nMILESTONE #3: - Cache Simulation Results\n")
+
+    print("***** CACHE SIMULATION RESULTS *****\n")
+
+    print(f"Total Cache Accesses:   {stats['accesses']}")
+    print(f"--- Instruction Bytes:  {stats['instruction_bytes']}")
+    print(f"--- SrcDst Bytes:       {stats['srcdst_bytes']}\n")
+
+    print(f"Cache Hits:             {stats['hits']}")
+    print(f"Cache Misses:           {stats['misses']}")
+    print(f"--- Compulsory Misses:  {stats['compulsory']}")
+    print(f"--- Conflict Misses:    {stats['conflict']}\n")
+
+    print("***** CACHE HIT & MISS RATE *****\n")
+
+    print(f"Hit Rate:               {stats['hit_rate']:.4f}%")
+    print(f"Miss Rate:              {stats['miss_rate']:.4f}%\n")
+
+    print(f"CPI:                    {stats['cpi']:.2f} Cycles/Instruction ({stats['cycles']})\n")
+
+    print("***** ADDITIONAL CACHE METRICS *****\n")
+
+    print(f"Total Cache Blocks:     {stats['total_blocks']}")
+    print(f"Unused Cache Blocks:    {stats['unused_blocks']}")
+    print(f"Unused Cache Space:     {stats['unused_kb']:.2f} KB")
+
+
+# ---------------- MAIN ----------------
+def main():
+    params = parse_args()
+
+    phys = calculate_physical_memory(params)
+    vm_stats, _ = simulate_virtual_memory(params, phys)
+
+    cache_stats = simulate_cache(params, vm_stats)
+    print_cache_results(cache_stats)
+
+
+if __name__ == "__main__":
+    main()
